@@ -3,4 +3,5 @@ project(EasySPHSimulator)
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(EasySPHSimulator main.cpp)
+add_executable(EasySPHSimulator main.cpp
+        include/SPHParticle.h)
