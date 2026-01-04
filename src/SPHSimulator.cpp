@@ -4,6 +4,7 @@
 #include "../include/SPHSimulator.h"
 #include <numbers>
 #include <random>
+
 //构造函数：初始化粒子（随机分布在立方体区域）
 SPHSimulator::SPHSimulator(int particleCount)
 {
