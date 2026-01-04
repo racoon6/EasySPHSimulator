@@ -8,7 +8,33 @@
 
 void saveParticlesToPLY(const std::span<const SPHParticle>& particles, const std::string& filename)
 {
-    std::cout << filename<<std::endl;
+    // 打开文件（输出模式，覆盖已有文件）
+    std::ofstream plyFile(filename);
+    if (!plyFile.is_open()) {
+        std::cerr << "Error: 无法打开文件 " << filename << " 进行写入！" << std::endl;
+        return;
+    }
+
+    // 1. 写入PLY文件头部（ASCII格式，点云类型）
+    plyFile << "ply" << std::endl;
+    plyFile << "format ascii 1.0" << std::endl;
+    plyFile << "element vertex " << particles.size() << std::endl;  // 顶点数量=粒子数量
+    plyFile << "property float x" << std::endl;                     // 位置x
+    plyFile << "property float y" << std::endl;                     // 位置y
+    plyFile << "property float z" << std::endl;                     // 位置z
+    plyFile << "end_header" << std::endl;
+
+    // 2. 写入每个粒子的顶点数据
+    for (const auto& p : particles) {
+        plyFile << p.pos.x << " "
+            << p.pos.y << " "
+            << p.pos.z << " "
+            << std::endl;
+    }
+
+    // 关闭文件
+    plyFile.close();
+    std::cout << "save" << filename << std::endl;
 }
 int main()
 {
@@ -38,4 +64,3 @@ int main()
     std::cout << "Simulation End." << std::endl;
     return 0;
 }
-
