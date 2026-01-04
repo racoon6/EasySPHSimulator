@@ -12,10 +12,10 @@
 class SPHSimulator {
 public:
     static constexpr float REST_DENSITY = 1000.0f; //静止密度（水）
-    static constexpr float GAS_CONSTANT = 40000.0f; //气体常数（控制压缩性）
+    static constexpr float GAS_CONSTANT = 1000.0f; //气体常数（控制压缩性）
     static constexpr float VISCOSITY = 0.01f;//粘性系数
-    static constexpr float KERNEL_RADIUS = 0.3f;//核函数半径（邻居搜索范围）
-    static constexpr float DT = 0.0005f;//仿真步长
+    static constexpr float KERNEL_RADIUS = 0.4f;//核函数半径（邻居搜索范围）h ≈ 1.3~2.0 * step h和粒子间距的一般关系
+    static constexpr float DT = 0.0001f;//仿真步长
 
     // SPHSimulator();
     explicit SPHSimulator(int particleCount);

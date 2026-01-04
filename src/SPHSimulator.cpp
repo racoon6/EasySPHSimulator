@@ -11,10 +11,10 @@ SPHSimulator::SPHSimulator(int particleCount)
     _particles.resize(particleCount);
 
     // 1. 确定立方体的粒子分布（比如300个粒子：x=6, y=10, z=5 → 6*10*5=300）
-    const int nx = 6;   // x方向粒子数
+    const int nx = 10;   // x方向粒子数
     const int ny = 10;  // y方向粒子数（决定水块高度）
-    const int nz = 5;   // z方向粒子数
-    const float step = 0.2f;  // 粒子间距（0.2足够大，Houdini里不会挤）
+    const int nz = 10;   // z方向粒子数
+    const float step = 0.2f;  // 粒子间距（0.2足够大，Houdini里不会挤）h ≈ 1.3~2.0 * step h和粒子间距的一般关系
 
     // 2. 按网格排列粒子，组成立方体水块
     int idx = 0;
@@ -25,9 +25,9 @@ SPHSimulator::SPHSimulator(int particleCount)
                 auto& p = _particles[idx];
                 // 立方体位置：x/z从0开始，y从2.0开始（让水块在高空，自由落体到地面）
                 p.pos = glm::vec3(
-                    x * step,
+                    x * step +1.0f,
                     y * step + 2.0f,  // y轴偏移，保证水块初始在地面上方
-                    z * step
+                    z * step +1.0f
                 );
                 p.vel = glm::vec3(0.0f);       // 初始静止
                 p.density = REST_DENSITY;      // 初始密度设为静止密度
@@ -101,6 +101,7 @@ void SPHSimulator::computeDensityPressure()
     for (int i = 0; i< _particles.size(); i++)
     {
         auto& particle = _particles[i];
+
         particle.density = 0.0f;
 
         // 找当前粒子所在网格及相邻网格的粒子（邻居）
@@ -116,7 +117,6 @@ void SPHSimulator::computeDensityPressure()
                     if (!_grid.count(key)) continue;
                     // 遍历网格内的邻居粒子
                     for (int j : _grid[key]) {
-                        if (i == j) continue;
                         const auto& pj = _particles[j];
                         glm::vec3 r = particle.pos - pj.pos;
                         particle.density += pj.mass * kernelPoly6(r, KERNEL_RADIUS);
@@ -134,7 +134,7 @@ void SPHSimulator::computeDensityPressure()
 void SPHSimulator::computeForces()
 {
     const glm::vec3 gravity(0.0f, -9.81f, 0.0f);  // 重力加速度
-    for (int i = 0; i< _particles.size(); i++)
+    for (int i = 0; i< static_cast<int>(_particles.size()); i++)
     {
         auto& particle = _particles[i];
         particle.resetAcc();
@@ -144,6 +144,10 @@ void SPHSimulator::computeForces()
         int gridX = static_cast<int>(particle.pos.x / KERNEL_RADIUS);
         int gridY = static_cast<int>(particle.pos.y / KERNEL_RADIUS);
         int gridZ = static_cast<int>(particle.pos.z / KERNEL_RADIUS);
+
+        // density 下限保护（0.1*rho0）
+        const float rhoi = std::max(particle.density, 0.1f * REST_DENSITY);
+
         for (int dx = -1; dx <= 1; ++dx) {
             for (int dy = -1; dy <= 1; ++dy) {
                 for (int dz = -1; dz <= 1; ++dz) {
@@ -154,16 +158,19 @@ void SPHSimulator::computeForces()
                         const auto& pj = _particles[j];
                         glm::vec3 r = particle.pos - pj.pos;
                         float rLen = glm::length(r);
-                        if (rLen > KERNEL_RADIUS) continue;
+                        if (rLen > KERNEL_RADIUS || rLen < 1e-6f) continue;
+                        const float rhoj = std::max(pj.density, 0.1f * REST_DENSITY);
 
-                        // 1. 压力力（排斥力）
-                        glm::vec3 pressureForce = -pj.mass * (particle.pressure + pj.pressure) / (2.0f * pj.density)
-                                                  * kernelSpikyGrad(r, KERNEL_RADIUS);
+                        // 1.  对称压力项（排斥力）
+                        glm::vec3 gradW = kernelSpikyGrad(r, KERNEL_RADIUS);
+                        glm::vec3 a_pressure  =
+                            -pj.mass * (particle.pressure/(rhoi*rhoi) + pj.pressure/(rhoj*rhoj)) * gradW;
                         // 2. 粘性力（阻尼）
-                        glm::vec3 viscosityForce = VISCOSITY * pj.mass * (pj.vel - particle.vel) / pj.density
-                                                   * kernelViscosityLaplacian(r, KERNEL_RADIUS);
+                        float lapW = kernelViscosityLaplacian(r, KERNEL_RADIUS);
+                        glm::vec3 a_visc =
+                            VISCOSITY * pj.mass * (pj.vel - particle.vel) / rhoj * lapW;
                         // 累加受力（F=ma → a=F/m）
-                        particle.acc += (pressureForce + viscosityForce) / particle.mass;
+                        particle.acc += (a_pressure  + a_visc) / particle.mass;
                     }
                 }
             }
@@ -175,29 +182,30 @@ void SPHSimulator::handleBoundary()
 {
     const float boundary = 0.1f;    // 边界厚度
     const float bounce = 0.8f;      // 反弹系数
+    const float max_limit = 6.0f;
     for (auto& p : _particles) {
         // x轴边界
         if (p.pos.x < boundary) {
             p.pos.x = boundary;
             p.vel.x *= -bounce;
-        } else if (p.pos.x > 3.0f - boundary) {
-            p.pos.x = 3.0f - boundary;
+        } else if (p.pos.x > max_limit - boundary) {
+            p.pos.x = max_limit - boundary;
             p.vel.x *= -bounce;
         }
         // y轴边界（地面）
         if (p.pos.y < boundary) {
             p.pos.y = boundary;
             p.vel.y *= -bounce;
-        }else if (p.pos.y > 3.0f - boundary) {
-            p.pos.y = 3.0f - boundary;
+        }else if (p.pos.y > max_limit - boundary) {
+            p.pos.y = max_limit - boundary;
             p.vel.y *= -bounce;
         }
         // z轴边界
         if (p.pos.z < boundary) {
             p.pos.z = boundary;
             p.vel.z *= -bounce;
-        } else if (p.pos.z > 3.0f - boundary) {
-            p.pos.z = 3.0f - boundary;
+        } else if (p.pos.z > max_limit - boundary) {
+            p.pos.z = max_limit - boundary;
             p.vel.z *= -bounce;
         }
     }

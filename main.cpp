@@ -47,7 +47,7 @@ int main()
     //     std::cout << particle.pos.x <<" "<< particle.pos.y <<" " <<particle.pos.z <<" " << std::endl;
     // }
     const auto& particles = simulator.getParticles();
-    std::string filename = "sph_step_start.ply";
+    std::string filename = "sph_step_-1.ply";//保存开始状态
     saveParticlesToPLY(particles, filename);
     int j = 0;
     for (int i = 0; i < 10000; i++) {
