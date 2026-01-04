@@ -38,7 +38,7 @@ void saveParticlesToPLY(const std::span<const SPHParticle>& particles, const std
 }
 int main()
 {
-    SPHSimulator simulator(300);
+    SPHSimulator simulator(1000);
     std::cout << "SPH Fluid Simulation Start..." << std::endl;
     // std::cout << "printing particles..." << std::endl;
     // std::span<const SPHParticle> particles = simulator.getParticles();;
@@ -46,6 +46,9 @@ int main()
     // {
     //     std::cout << particle.pos.x <<" "<< particle.pos.y <<" " <<particle.pos.z <<" " << std::endl;
     // }
+    const auto& particles = simulator.getParticles();
+    std::string filename = "sph_step_start.ply";
+    saveParticlesToPLY(particles, filename);
     int j = 0;
     for (int i = 0; i < 10000; i++) {
         simulator.step();

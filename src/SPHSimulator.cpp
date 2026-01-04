@@ -9,17 +9,32 @@
 SPHSimulator::SPHSimulator(int particleCount)
 {
     _particles.resize(particleCount);
-    //随机数
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
-    for (auto& particle : _particles)
-    {
-        particle.pos = glm::vec3(dist(gen), dist(gen) + 1.0f, dist(gen));//y轴偏移避免落地
-        particle.vel = glm::vec3(0.0f);
-        particle.density = REST_DENSITY;
-        particle.pressure = 0.0f;
+    // 1. 确定立方体的粒子分布（比如300个粒子：x=6, y=10, z=5 → 6*10*5=300）
+    const int nx = 6;   // x方向粒子数
+    const int ny = 10;  // y方向粒子数（决定水块高度）
+    const int nz = 5;   // z方向粒子数
+    const float step = 0.2f;  // 粒子间距（0.2足够大，Houdini里不会挤）
+
+    // 2. 按网格排列粒子，组成立方体水块
+    int idx = 0;
+    for (int x = 0; x < nx; ++x) {
+        for (int y = 0; y < ny; ++y) {
+            for (int z = 0; z < nz; ++z) {
+                if (idx >= particleCount) break;
+                auto& p = _particles[idx];
+                // 立方体位置：x/z从0开始，y从2.0开始（让水块在高空，自由落体到地面）
+                p.pos = glm::vec3(
+                    x * step,
+                    y * step + 2.0f,  // y轴偏移，保证水块初始在地面上方
+                    z * step
+                );
+                p.vel = glm::vec3(0.0f);       // 初始静止
+                p.density = REST_DENSITY;      // 初始密度设为静止密度
+                p.pressure = 0.0f;
+                idx++;
+            }
+        }
     }
 }
 
@@ -165,21 +180,24 @@ void SPHSimulator::handleBoundary()
         if (p.pos.x < boundary) {
             p.pos.x = boundary;
             p.vel.x *= -bounce;
-        } else if (p.pos.x > 1.0f - boundary) {
-            p.pos.x = 1.0f - boundary;
+        } else if (p.pos.x > 3.0f - boundary) {
+            p.pos.x = 3.0f - boundary;
             p.vel.x *= -bounce;
         }
         // y轴边界（地面）
         if (p.pos.y < boundary) {
             p.pos.y = boundary;
             p.vel.y *= -bounce;
+        }else if (p.pos.y > 3.0f - boundary) {
+            p.pos.y = 3.0f - boundary;
+            p.vel.y *= -bounce;
         }
         // z轴边界
         if (p.pos.z < boundary) {
             p.pos.z = boundary;
             p.vel.z *= -bounce;
-        } else if (p.pos.z > 1.0f - boundary) {
-            p.pos.z = 1.0f - boundary;
+        } else if (p.pos.z > 3.0f - boundary) {
+            p.pos.z = 3.0f - boundary;
             p.vel.z *= -bounce;
         }
     }
