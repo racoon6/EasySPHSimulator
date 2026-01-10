@@ -2,8 +2,6 @@
 // Created by Wanghuanxiong on 2026/1/4.
 //
 #include "../include/SPHSimulator.h"
-#include <numbers>
-#include <random>
 
 //构造函数：初始化粒子（随机分布在立方体区域）
 SPHSimulator::SPHSimulator(int particleCount)
@@ -14,7 +12,6 @@ SPHSimulator::SPHSimulator(int particleCount)
     const int nx = 10;   // x方向粒子数
     const int ny = 10;  // y方向粒子数（决定水块高度）
     const int nz = 10;   // z方向粒子数
-    const float step = 0.2f;  // 粒子间距（0.2足够大，Houdini里不会挤）h ≈ 1.3~2.0 * step h和粒子间距的一般关系
 
     // 2. 按网格排列粒子，组成立方体水块
     int idx = 0;
@@ -25,9 +22,9 @@ SPHSimulator::SPHSimulator(int particleCount)
                 auto& p = _particles[idx];
                 // 立方体位置：x/z从0开始，y从2.0开始（让水块在高空，自由落体到地面）
                 p.pos = glm::vec3(
-                    x * step +1.0f,
-                    y * step + 2.0f,  // y轴偏移，保证水块初始在地面上方
-                    z * step +1.0f
+                    x * PARTICLE_STEP +1.0f,
+                    y * PARTICLE_STEP + 2.0f,  // y轴偏移，保证水块初始在地面上方
+                    z * PARTICLE_STEP +1.0f
                 );
                 p.vel = glm::vec3(0.0f);       // 初始静止
                 p.density = REST_DENSITY;      // 初始密度设为静止密度
@@ -51,47 +48,75 @@ void SPHSimulator::step()
 float SPHSimulator::kernelPoly6(const glm::vec3 &r, const float h) const noexcept
 {
     const float r2 = glm::dot(r, r);//距离的平法，减少开根计算
-    const float h2 = h * h;
+    // const float h2 = h * h;
     if (r2 > h2) return 0.0f;
 
-    const float h3 = h2 * h;
-    const float h9 = h3 * h3 * h3;
+    // const float h3 = h2 * h;
+    // const float h9 = h3 * h3 * h3;
     const float x = (h2 - r2);
 
-    return (315.0f * x * x * x)/ (64.0f * std::numbers::pi_v<float> * h9);
+    return _poly6Coeff * x * x * x;
 }
 
-// Spiky核函数梯度（压力力）
 glm::vec3 SPHSimulator::kernelSpikyGrad(const glm::vec3& r, float h) const noexcept
 {
-    const float rLen = glm::length(r);
-    if (rLen > h || rLen < 1e-6f) return glm::vec3(0.0f);
-    const float h3 = h * h * h;
+    const float r2 = glm::dot(r, r);
+    // const float h2 = h * h;
+
+    if (r2 > h2 || r2 < 1e-12f) return glm::vec3(0.0f);
+
+    const float rLen = std::sqrt(r2);
     const float val = h - rLen;
-    return -45.0f / (std::numbers::pi_v<float> * h3) * val * val * glm::normalize(r);
+
+    // const float h3 = h2 * h;
+    // const float h6 = h3 * h3;
+
+    // const float coeff = -45.0f / (std::numbers::pi_v<float> * h6);
+
+    // coeff * (h-r)^2 * (r / rLen)
+    return _spikyGradCoeff * val * val * (r / rLen);
 }
 
-// Viscosity核函数拉普拉斯（粘性力）
+// Viscosity核函数拉普拉斯（3D，粘性力用）
 float SPHSimulator::kernelViscosityLaplacian(const glm::vec3& r, float h) const noexcept
 {
-    const float rLen = glm::length(r);
-    if (rLen > h) return 0.0f;
-    return 45.0f / (std::numbers::pi_v<float> * h * h * h) * (h - rLen);
+    const float r2 = glm::dot(r, r);
+    // const float h2 = h * h;
+    if (r2 > h2) return 0.0f;
+
+    const float rLen = std::sqrt(r2);
+
+    // const float h3 = h2 * h;
+    // const float h6 = h3 * h3;
+
+    // const float coeff = 45.0f / (std::numbers::pi_v<float> * h6);
+    return _viscLapCoeff * (h - rLen);
+}
+
+uint64_t SPHSimulator::hashKey(int x, int y, int z)
+{
+    // 64-bit 混合
+    uint64_t hx = (uint64_t)(x) * 73856093ull;
+    uint64_t hy = (uint64_t)(y) * 19349663ull;
+    uint64_t hz = (uint64_t)(z) * 83492791ull;
+    return hx ^ hy ^ hz;
 }
 
 // 构建空间网格（哈希键：网格坐标转整数）
 void SPHSimulator::buildSpatialGrid()
 {
-    _grid.clear();
-    for (int i = 0; i< _particles.size(); i++)
+    _grid.clear();               // unordered_map< uint64_t, vector<int> > 之类
+    _grid.reserve(_particles.size()); // 可选：减少 rehash
+
+    for (int i = 0; i < (int)_particles.size(); i++)
     {
-        const auto& particle = _particles[i];
-        // 计算粒子所在网格坐标
-        int gridX = static_cast<int>(particle.pos.x / KERNEL_RADIUS);
-        int gridY = static_cast<int>(particle.pos.y / KERNEL_RADIUS);
-        int gridZ = static_cast<int>(particle.pos.z / KERNEL_RADIUS);
-        // 哈希键（简单拼接）
-        int key = (gridX << 20) | (gridY << 10) | gridZ;
+        const auto& p = _particles[i];
+
+        int gridX = (int)std::floor(p.pos.x / KERNEL_RADIUS);
+        int gridY = (int)std::floor(p.pos.y / KERNEL_RADIUS);
+        int gridZ = (int)std::floor(p.pos.z / KERNEL_RADIUS);
+
+        uint64_t key = hashKey(gridX, gridY, gridZ);   // 或 packKey(gx,gy,gz)
         _grid[key].push_back(i);
     }
 }
@@ -105,15 +130,15 @@ void SPHSimulator::computeDensityPressure()
         particle.density = 0.0f;
 
         // 找当前粒子所在网格及相邻网格的粒子（邻居）
-        int gridX = static_cast<int>(particle.pos.x / KERNEL_RADIUS);
-        int gridY = static_cast<int>(particle.pos.y / KERNEL_RADIUS);
-        int gridZ = static_cast<int>(particle.pos.z / KERNEL_RADIUS);
+        int gridX = (int)std::floor(particle.pos.x / KERNEL_RADIUS);
+        int gridY = (int)std::floor(particle.pos.y / KERNEL_RADIUS);
+        int gridZ = (int)std::floor(particle.pos.z / KERNEL_RADIUS);
 
         // 遍历3x3x3相邻网格
         for (int dx = -1; dx <= 1; ++dx) {
             for (int dy = -1; dy <= 1; ++dy) {
                 for (int dz = -1; dz <= 1; ++dz) {
-                    int key = ((gridX + dx) << 20) | ((gridY + dy) << 10) | (gridZ + dz);
+                    uint64_t key = hashKey(gridX + dx, gridY + dy, gridZ + dz);
                     if (!_grid.count(key)) continue;
                     // 遍历网格内的邻居粒子
                     for (int j : _grid[key]) {
@@ -126,7 +151,7 @@ void SPHSimulator::computeDensityPressure()
         }
 
         // 压力计算：P = k*(ρ - ρ0)（WCSPH状态方程）
-        particle.pressure = GAS_CONSTANT * (particle.density - REST_DENSITY);
+        particle.pressure = std::max(0.0f, K_PRESSURE * (particle.density - REST_DENSITY));
     }
 }
 
@@ -141,9 +166,9 @@ void SPHSimulator::computeForces()
         particle.acc += gravity;  // 先加重力
 
         // 找邻居计算压力力/粘性力
-        int gridX = static_cast<int>(particle.pos.x / KERNEL_RADIUS);
-        int gridY = static_cast<int>(particle.pos.y / KERNEL_RADIUS);
-        int gridZ = static_cast<int>(particle.pos.z / KERNEL_RADIUS);
+        int gridX = (int)std::floor(particle.pos.x / KERNEL_RADIUS);
+        int gridY = (int)std::floor(particle.pos.y / KERNEL_RADIUS);
+        int gridZ = (int)std::floor(particle.pos.z / KERNEL_RADIUS);
 
         // density 下限保护（0.1*rho0）
         const float rhoi = std::max(particle.density, 0.1f * REST_DENSITY);
@@ -151,7 +176,7 @@ void SPHSimulator::computeForces()
         for (int dx = -1; dx <= 1; ++dx) {
             for (int dy = -1; dy <= 1; ++dy) {
                 for (int dz = -1; dz <= 1; ++dz) {
-                    int key = ((gridX + dx) << 20) | ((gridY + dy) << 10) | (gridZ + dz);
+                    uint64_t key = hashKey(gridX + dx, gridY + dy, gridZ + dz);
                     if (!_grid.count(key)) continue;
                     for (int j : _grid[key]) {
                         if (i == j) continue;
@@ -170,7 +195,7 @@ void SPHSimulator::computeForces()
                         glm::vec3 a_visc =
                             VISCOSITY * pj.mass * (pj.vel - particle.vel) / rhoj * lapW;
                         // 累加受力（F=ma → a=F/m）
-                        particle.acc += (a_pressure  + a_visc) / particle.mass;
+                        particle.acc += a_pressure  + a_visc;
                     }
                 }
             }
@@ -181,7 +206,7 @@ void SPHSimulator::computeForces()
 void SPHSimulator::handleBoundary()
 {
     const float boundary = 0.1f;    // 边界厚度
-    const float bounce = 0.8f;      // 反弹系数
+    const float bounce = 0.5f;      // 反弹系数
     const float max_limit = 6.0f;
     for (auto& p : _particles) {
         // x轴边界

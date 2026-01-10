@@ -7,16 +7,17 @@
 #include <span>
 #include <vector>
 #include "SPHParticle.h"
-
+#include <numbers>
+#include <random>
 
 class SPHSimulator {
 public:
     static constexpr float REST_DENSITY = 1000.0f; //静止密度（水）
-    static constexpr float GAS_CONSTANT = 1000.0f; //气体常数（控制压缩性）
+    static constexpr float K_PRESSURE = 5000.0f; //气体常数（控制压缩性）
     static constexpr float VISCOSITY = 0.01f;//粘性系数
-    static constexpr float KERNEL_RADIUS = 0.4f;//核函数半径（邻居搜索范围）h ≈ 1.3~2.0 * step h和粒子间距的一般关系
+    static constexpr float PARTICLE_STEP = 0.2f;  // 粒子间距（0.2足够大，Houdini里不会挤）h ≈ 1.3~2.0 * step h和粒子间距的一般关系
+    static constexpr float KERNEL_RADIUS = 2*PARTICLE_STEP;//核函数半径（邻居搜索范围）h ≈ 1.3~2.0 * step h和粒子间距的一般关系
     static constexpr float DT = 0.0001f;//仿真步长
-
     // SPHSimulator();
     explicit SPHSimulator(int particleCount);
 
@@ -31,7 +32,17 @@ public:
 private:
     std::vector<SPHParticle> _particles;//粒子数组
     //网格哈希（邻居搜索优化：按空间网格划分粒子）
-    std::unordered_map<int, std::vector<int>> _grid;
+    std::unordered_map<uint64_t, std::vector<int>> _grid;
+
+    const float h2 = KERNEL_RADIUS * KERNEL_RADIUS;
+    const float h3 = h2 * KERNEL_RADIUS;
+    const float h6 = h3 * h3;
+    const float h9 = h6 * h3;
+
+    // 预计算系数（3D）
+    const float _poly6Coeff = 315.0f / (64.0f * std::numbers::pi_v<float> * h9);        // 315 / (64*pi*h^9)
+    const float _spikyGradCoeff = -45.0f / (std::numbers::pi_v<float> * h6);    // -45 / (pi*h^6)
+    const float _viscLapCoeff =  45.0f / (std::numbers::pi_v<float> * h6);      // 45 / (pi*h^6)
 
     //核函数：Poly（密度计算）
     float kernelPoly6(const glm::vec3 &r,float h) const noexcept;
@@ -39,6 +50,8 @@ private:
     glm::vec3 kernelSpikyGrad(const glm::vec3 &r,float h) const noexcept;
     // 核函数拉普拉斯：Viscosity（粘性力计算）
     float kernelViscosityLaplacian(const glm::vec3 &r, float h) const noexcept;
+
+    static inline uint64_t hashKey(int x, int y, int z);
 
     //1.构建空间网格（邻居搜索的前置）
     void buildSpatialGrid();
