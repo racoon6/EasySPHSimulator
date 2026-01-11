@@ -50,10 +50,10 @@ int main()
     std::string filename = "sph_step_-1.ply";//保存开始状态
     saveParticlesToPLY(particles, filename);
     int j = 0;
-    for (int i = 0; i < 10000; i++) {
+    for (int i = 0; i < 19968; i++) {
         simulator.step();
         // 输出第100步的粒子位置
-        if (i % 100 == 0) {
+        if (i % 416 == 0) {
             const auto& particles = simulator.getParticles();
             // 拼接文件名（带步数，方便序列识别）
             std::string filename = "sph_step_" + std::to_string(j++) + ".ply";

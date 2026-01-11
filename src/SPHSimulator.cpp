@@ -150,15 +150,18 @@ void SPHSimulator::computeDensityPressure()
             }
         }
 
+        float ratio = particle.density / REST_DENSITY;
+        particle.pressure = B * (std::pow(ratio, gamma) - 1.0f);
+        particle.pressure = std::max(0.0f, particle.pressure);
         // 压力计算：P = k*(ρ - ρ0)（WCSPH状态方程）
-        particle.pressure = std::max(0.0f, K_PRESSURE * (particle.density - REST_DENSITY));
+        // particle.pressure = std::max(0.0f, K_PRESSURE * (particle.density - REST_DENSITY));
     }
 }
 
 // 计算受力（压力力+粘性力+重力）
 void SPHSimulator::computeForces()
 {
-    const glm::vec3 gravity(0.0f, -9.81f, 0.0f);  // 重力加速度
+    const glm::vec3 gravity(0.0f, -9.81f, 0.0f);  // 重力加速度-9.81
     for (int i = 0; i< static_cast<int>(_particles.size()); i++)
     {
         auto& particle = _particles[i];
@@ -194,8 +197,12 @@ void SPHSimulator::computeForces()
                         float lapW = kernelViscosityLaplacian(r, KERNEL_RADIUS);
                         glm::vec3 a_visc =
                             VISCOSITY * pj.mass * (pj.vel - particle.vel) / rhoj * lapW;
+
+                        //3.表面张力
+                        float WijPloy6 = kernelPoly6(r, KERNEL_RADIUS);
+                        glm::vec3 f_st = -SURFACE_TENSION * pj.mass * r * WijPloy6;
                         // 累加受力（F=ma → a=F/m）
-                        particle.acc += a_pressure  + a_visc;
+                        particle.acc += a_pressure  + a_visc + f_st/particle.mass;
                     }
                 }
             }
@@ -206,7 +213,7 @@ void SPHSimulator::computeForces()
 void SPHSimulator::handleBoundary()
 {
     const float boundary = 0.1f;    // 边界厚度
-    const float bounce = 0.5f;      // 反弹系数
+    const float bounce = 0.02f;      // 反弹系数
     const float max_limit = 6.0f;
     for (auto& p : _particles) {
         // x轴边界

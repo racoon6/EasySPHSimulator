@@ -18,6 +18,7 @@ public:
     static constexpr float PARTICLE_STEP = 0.2f;  // 粒子间距（0.2足够大，Houdini里不会挤）h ≈ 1.3~2.0 * step h和粒子间距的一般关系
     static constexpr float KERNEL_RADIUS = 2*PARTICLE_STEP;//核函数半径（邻居搜索范围）h ≈ 1.3~2.0 * step h和粒子间距的一般关系
     static constexpr float DT = 0.0001f;//仿真步长
+    static constexpr float SURFACE_TENSION = 0.5f;//表面张力系数
     // SPHSimulator();
     explicit SPHSimulator(int particleCount);
 
@@ -43,6 +44,12 @@ private:
     const float _poly6Coeff = 315.0f / (64.0f * std::numbers::pi_v<float> * h9);        // 315 / (64*pi*h^9)
     const float _spikyGradCoeff = -45.0f / (std::numbers::pi_v<float> * h6);    // -45 / (pi*h^6)
     const float _viscLapCoeff =  45.0f / (std::numbers::pi_v<float> * h6);      // 45 / (pi*h^6)
+
+    // 选 gamma=7（水常用）
+    const float gamma = 7.0f;
+    // 选人工声速 c0（通常 10*u_max）
+    const float c0 = 70;
+    const float B = REST_DENSITY * c0 * c0 / gamma;
 
     //核函数：Poly（密度计算）
     float kernelPoly6(const glm::vec3 &r,float h) const noexcept;
